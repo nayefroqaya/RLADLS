@@ -26,8 +26,8 @@ data:
   time_col: Timestamp
   template_col: EventTemplate
   label_col: Label
-  normal_label: normal
-  anomaly_label: anomaly
+  normal_label: Normal
+  anomaly_label: Anomaly
   random_seed: 42
 
 # Dataset-specific sequence/group columns.
