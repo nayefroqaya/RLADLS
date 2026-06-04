@@ -17,7 +17,7 @@ split_files:
 
 data:
   # Used for in-domain runs.
-  dataset_name: HDFS
+  dataset_name: BGL
 
   # HDFS uses Node_block_id or block_id.
   # Continuous datasets use null.
@@ -71,10 +71,10 @@ adaptation:
   # source_datasets are used for source training.
   # target_dataset is used for direct-transfer evaluation and adaptation.
   source_datasets:
-    - BGL
-    - TH_1G
-    - SP_150MB
-  target_dataset: HDFS
+    - XX
+    - XX
+    - XX
+  target_dataset: XXX
 
   # Target adaptation uses only normal target training sequences.
   target_normal_fraction: 0.20
