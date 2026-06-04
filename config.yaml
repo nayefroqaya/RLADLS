@@ -1,0 +1,104 @@
+experiment:
+  # Choose one case and run with: python main.py --config config.yaml
+  # Options:
+  #   in_domain                  = train/val/test on one dataset
+  #   cross_dataset_adaptation   = train on source datasets, test target, adapt with normal target data, test again
+  #   both                       = run in_domain first, then cross_dataset_adaptation
+  case: in_domain
+
+paths:
+  data_dir: "datasets"
+  dataset_path_template: "{dataset}/1_{dataset}_Splitted_Datasets"
+
+split_files:
+  train: "train_df.pkl"
+  val: "val_df.pkl"
+  test: "test_df.pkl"
+
+data:
+  # Used for in-domain runs.
+  dataset_name: HDFS
+
+  # HDFS uses Node_block_id or block_id.
+  # Continuous datasets use null.
+  group_col: Node_block_id
+
+  time_col: timestamp
+  template_col: template
+  label_col: label
+  normal_label: normal
+  anomaly_label: anomaly
+  random_seed: 42
+
+sequence:
+  sequence_length: 120
+  sliding_step: 1
+
+slm:
+  enabled: true
+  model_name: "sentence-transformers/all-MiniLM-L6-v2"
+  freeze: true
+  batch_size: 64
+  cache_dir: "outputs/slm_cache"
+
+env:
+  continue_penalty: -0.05
+  correct_alert_reward: 10.0
+  false_alert_penalty: -10.0
+  missed_anomaly_penalty: -20.0
+  correct_normal_reward: 5.0
+  early_detection_bonus: 2.0
+
+model:
+  id_embedding_dim: 64
+  hidden_dim: 128
+  learning_rate: 0.0005
+  gamma: 0.99
+  batch_size: 64
+  replay_capacity: 50000
+  target_update_steps: 500
+  train_steps: 20000
+  warmup_steps: 1000
+  epsilon_start: 1.0
+  epsilon_end: 0.05
+  epsilon_decay_steps: 12000
+
+adaptation:
+  # Cross-dataset experiment.
+  enabled: true
+
+  # Leave-one-target example:
+  # source_datasets are used for source training.
+  # target_dataset is used for direct-transfer evaluation and adaptation.
+  source_datasets:
+    - BGL
+    - TH_1G
+    - SP_150MB
+  target_dataset: HDFS
+
+  # Target adaptation uses only normal target training sequences.
+  target_normal_fraction: 0.20
+
+  # DQN fine-tuning steps on the 20% normal target training data.
+  adapt_steps: 5000
+  adapt_learning_rate: 0.0001
+
+  # Usually lower exploration during adaptation.
+  epsilon_start: 0.20
+  epsilon_end: 0.05
+  epsilon_decay_steps: 3000
+
+  # Checkpoints.
+  source_checkpoint_name: "cross_source_dqn.pt"
+  adapted_checkpoint_name: "cross_adapted_dqn.pt"
+
+evaluation:
+  false_positive_cost: 10.0
+  false_negative_cost: 20.0
+  delay_cost: 5.0
+  save_results: true
+  results_dir: "outputs/evaluation_results"
+
+output:
+  output_dir: outputs
+  checkpoint_name: dqn_minilm_log_anomaly.pt
