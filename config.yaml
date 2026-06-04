@@ -23,9 +23,9 @@ data:
   # Continuous datasets use null.
   group_col: Node_block_id
 
-  time_col: timestamp
+  time_col: Timestamp
   template_col: EventTemplate
-  label_col: label
+  label_col: Label
   normal_label: normal
   anomaly_label: anomaly
   random_seed: 42
