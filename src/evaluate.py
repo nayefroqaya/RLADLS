@@ -4,6 +4,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import torch
+from tqdm import tqdm
 
 from sklearn.metrics import (
     accuracy_score,
@@ -329,7 +330,19 @@ def evaluate_policy(model, sequences, cfg, device, name="Evaluation"):
     model.eval()
     results = []
 
-    for _ in range(len(sequences)):
+    show_progress = bool(cfg.get("evaluation", {}).get("show_progress", True))
+
+    iterator = range(len(sequences))
+    if show_progress:
+        iterator = tqdm(
+            iterator,
+            total=len(sequences),
+            desc=f"Evaluating {name}",
+            unit="seq",
+            dynamic_ncols=True
+        )
+
+    for _ in iterator:
         results.append(run_one_episode(env, model, device))
 
     y_true = [item["true_label"] for item in results]

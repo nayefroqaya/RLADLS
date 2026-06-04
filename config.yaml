@@ -19,8 +19,8 @@ data:
   # Used for in-domain runs.
   dataset_name: BGL
 
-  # HDFS uses Node_block_id or block_id.
-  # Continuous datasets use null.
+  # All datasets already have preprocessed windows/sequences in Node_block_id.
+  # The code uses this column as the RL episode boundary.
   group_col: Node_block_id
 
   time_col: Timestamp
@@ -30,7 +30,19 @@ data:
   anomaly_label: anomaly
   random_seed: 42
 
+# Dataset-specific sequence/group columns.
+# Node_block_id already comes from your preprocessing window step for all datasets.
+dataset_group_cols:
+  HDFS: Node_block_id
+  BGL: Node_block_id
+  TH_1G: Node_block_id
+  SP_150MB: Node_block_id
+
 sequence:
+  # group_by_column means: do NOT create new sliding windows.
+  # Instead, assemble each RL episode by grouping rows with the same Node_block_id.
+  # Options: group_by_column, sliding_window, auto
+  construction: group_by_column
   sequence_length: 120
   sliding_step: 1
 
@@ -97,6 +109,7 @@ evaluation:
   false_negative_cost: 20.0
   delay_cost: 5.0
   save_results: true
+  show_progress: true
   results_dir: "outputs/evaluation_results"
 
 output:

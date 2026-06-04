@@ -231,18 +231,18 @@ def prepare_dataframe(
     return df
 
 
-def dataframe_to_hdfs_sequences(
+def dataframe_to_grouped_sequences(
     df: pd.DataFrame,
     group_col: str,
     time_col: str,
     split_name: str,
     dataset_name: str
 ) -> List[LogSequence]:
-    print(f"Building HDFS sequences for {split_name}...")
+    print(f"Building grouped sequences for {split_name} using {group_col}...")
 
     if group_col is None or group_col not in df.columns:
         raise ValueError(
-            f"HDFS requires group_col such as Node_block_id or block_id. "
+            f"Grouped sequence construction requires group_col such as Node_block_id or block_id. "
             f"Current group_col={group_col}. Available columns: {list(df.columns)}"
         )
 
@@ -274,7 +274,7 @@ def dataframe_to_hdfs_sequences(
             )
         )
 
-    print(f"{split_name}: built {len(sequences)} HDFS sequences")
+    print(f"{split_name}: built {len(sequences)} grouped sequences")
     return sequences
 
 
@@ -376,17 +376,34 @@ def convert_raw_splits_to_sequences(
             split_name=f"{dataset_name}/{split_name}"
         )
 
-    if dataset_name.lower() == "hdfs":
-        train_sequences = dataframe_to_hdfs_sequences(
+    construction_mode = str(
+        cfg.get("sequence", {}).get("construction", "group_by_column")
+    ).strip().lower()
+
+    group_available = (
+        group_col is not None
+        and all(group_col in prepared[name].columns for name in ["train", "val", "test"])
+    )
+
+    if construction_mode in {"group", "group_by_column", "node_block_id"}:
+        if not group_available:
+            raise ValueError(
+                f"sequence.construction is '{construction_mode}', but group_col='{group_col}' "
+                f"was not found in all splits for dataset {dataset_name}. "
+                f"Train columns: {list(prepared['train'].columns)}"
+            )
+
+        train_sequences = dataframe_to_grouped_sequences(
             prepared["train"], group_col, time_col, "train", dataset_name
         )
-        val_sequences = dataframe_to_hdfs_sequences(
+        val_sequences = dataframe_to_grouped_sequences(
             prepared["val"], group_col, time_col, "validation", dataset_name
         )
-        test_sequences = dataframe_to_hdfs_sequences(
+        test_sequences = dataframe_to_grouped_sequences(
             prepared["test"], group_col, time_col, "test", dataset_name
         )
-    else:
+
+    elif construction_mode in {"sliding", "sliding_window"}:
         train_sequences = dataframe_to_sliding_window_sequences(
             prepared["train"], dataset_name, sequence_length, sliding_step, "train"
         )
@@ -395,6 +412,34 @@ def convert_raw_splits_to_sequences(
         )
         test_sequences = dataframe_to_sliding_window_sequences(
             prepared["test"], dataset_name, sequence_length, sliding_step, "test"
+        )
+
+    elif construction_mode == "auto":
+        if group_available:
+            train_sequences = dataframe_to_grouped_sequences(
+                prepared["train"], group_col, time_col, "train", dataset_name
+            )
+            val_sequences = dataframe_to_grouped_sequences(
+                prepared["val"], group_col, time_col, "validation", dataset_name
+            )
+            test_sequences = dataframe_to_grouped_sequences(
+                prepared["test"], group_col, time_col, "test", dataset_name
+            )
+        else:
+            train_sequences = dataframe_to_sliding_window_sequences(
+                prepared["train"], dataset_name, sequence_length, sliding_step, "train"
+            )
+            val_sequences = dataframe_to_sliding_window_sequences(
+                prepared["val"], dataset_name, sequence_length, sliding_step, "validation"
+            )
+            test_sequences = dataframe_to_sliding_window_sequences(
+                prepared["test"], dataset_name, sequence_length, sliding_step, "test"
+            )
+
+    else:
+        raise ValueError(
+            f"Unknown sequence.construction='{construction_mode}'. "
+            "Use group_by_column, sliding_window, or auto."
         )
 
     return train_sequences, val_sequences, test_sequences
