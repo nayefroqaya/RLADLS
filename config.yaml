@@ -17,7 +17,7 @@ split_files:
 
 data:
   # Used for in-domain runs.
-  dataset_name: BGL
+  dataset_name: HDFS
 
   # All datasets already have preprocessed windows/sequences in Node_block_id.
   # The code uses this column as the RL episode boundary.
