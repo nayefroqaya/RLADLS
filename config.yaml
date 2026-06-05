@@ -36,7 +36,7 @@ dataset_group_cols:
   HDFS: Node_block_id
   BGL: Node_block_id
   TH_1G: Node_block_id
-  SP_150MB: Node_block_id
+  SP_150MB_ratio: Node_block_id
 
 sequence:
   # group_by_column means: do NOT create new sliding windows.
