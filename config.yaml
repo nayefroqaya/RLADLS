@@ -56,7 +56,7 @@ slm:
   cache_dir: "outputs/slm_cache"
 
 env:
-  continue_penalty: -0.05
+  continue_penalty: -0.01
   correct_alert_reward: 10.0
   false_alert_penalty: -20.0
   missed_anomaly_penalty: -20.0
@@ -106,13 +106,38 @@ adaptation:
   source_checkpoint_name: "cross_source_dqn.pt"
   adapted_checkpoint_name: "cross_adapted_dqn.pt"
 
+
+
 evaluation:
+  show_progress: true
+  save_results: true
+  results_dir: "outputs/evaluation_results"
+
   false_positive_cost: 10.0
   false_negative_cost: 20.0
   delay_cost: 5.0
-  save_results: true
-  show_progress: true
-  results_dir: "outputs/evaluation_results"
+
+  # Post-hoc calibration
+  tune_threshold_on_validation: true
+
+  # Choose one:
+  #   f1
+  #   cost
+  #   precision
+  #   recall
+  #   balanced_accuracy
+  threshold_metric: f1
+
+  threshold_min: -2.0
+  threshold_max: 5.0
+  threshold_steps: 50
+
+  # Default threshold before tuning.
+  decision_threshold: 0.0
+
+  # Prevent alerting at the first event.
+  # Try 1 first. If false positives are still high, try 2 or 3.
+  min_alert_step: 1
 
 output:
   output_dir: outputs

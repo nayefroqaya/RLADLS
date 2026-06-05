@@ -11,7 +11,7 @@ from src.slm_embedder import build_minilm_embedding_matrix
 from src.env import LogAnomalyEnv
 from src.model import SLM_DQN
 from src.replay_buffer import ReplayBuffer
-from src.evaluate import evaluate_policy
+from src.evaluate import evaluate_policy, tune_decision_threshold
 from src.utils import load_config, set_seed, ensure_dir, linear_epsilon
 
 
@@ -190,6 +190,7 @@ def train_dqn_on_sequences(
             )
 
             q_values = model(states)
+
             q_selected = q_values.gather(
                 1,
                 actions.unsqueeze(1)
@@ -257,14 +258,17 @@ def save_checkpoint(
     if extra:
         payload.update(extra)
 
-    torch.save(payload, path)
+    torch.save(
+        payload,
+        path
+    )
+
     print(f"Saved checkpoint to: {path}")
 
 
 def print_final_test_summary(test_result, dataset_name):
     """
-    Print a compact final summary at the very end of the run.
-    This makes the test metrics easy to read directly in the terminal/CMD.
+    Print compact test metrics at the very end of the CMD output.
     """
     m = test_result["metrics"]
 
@@ -296,6 +300,8 @@ def print_final_test_summary(test_result, dataset_name):
 
     print(f"Dataset               : {dataset_name}")
     print(f"Number of sequences   : {m['num_sequences']}")
+    print(f"Decision threshold    : {m['decision_threshold']:.4f}")
+    print(f"Minimum alert step    : {m['min_alert_step']}")
     print()
 
     print("[Classification Metrics]")
@@ -395,7 +401,7 @@ def train_in_domain(config_path: str = "config.yaml"):
         phase_name="In-domain training"
     )
 
-    print("\nValidation result:")
+    print("\nValidation result before threshold calibration:")
     val_result = evaluate_policy(
         model=model,
         sequences=val_sequences,
@@ -403,6 +409,24 @@ def train_in_domain(config_path: str = "config.yaml"):
         device=device,
         name=f"{dataset_name} Validation"
     )
+
+    if bool(
+        cfg.get("evaluation", {}).get(
+            "tune_threshold_on_validation",
+            False
+        )
+    ):
+        best_threshold, threshold_val_result = tune_decision_threshold(
+            model=model,
+            val_sequences=val_sequences,
+            cfg=cfg,
+            device=device
+        )
+
+        print()
+        print(f"Using calibrated threshold for test: {best_threshold:.4f}")
+
+        val_result = threshold_val_result
 
     print("\nFinal in-domain test result:")
     test_result = evaluate_policy(
@@ -427,11 +451,14 @@ def train_in_domain(config_path: str = "config.yaml"):
         cfg=cfg,
         extra={
             "experiment_type": "in_domain",
-            "dataset_name": dataset_name
+            "dataset_name": dataset_name,
+            "decision_threshold": cfg.get("evaluation", {}).get(
+                "decision_threshold",
+                0.0
+            )
         }
     )
 
-    # Print compact test summary as the final thing in CMD.
     print_final_test_summary(
         test_result=test_result,
         dataset_name=dataset_name
