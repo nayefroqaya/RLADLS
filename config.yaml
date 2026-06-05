@@ -48,7 +48,9 @@ sequence:
 
 slm:
   enabled: true
-  model_name: "sentence-transformers/all-MiniLM-L6-v2"
+  #model_name: "sentence-transformers/all-MiniLM-L6-v2"
+  model_name: "microsoft/MiniLM-L12-H384-uncased"
+
   freeze: true
   batch_size: 64
   cache_dir: "outputs/slm_cache"
