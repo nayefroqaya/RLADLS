@@ -4,7 +4,7 @@ experiment:
   #   in_domain                  = train/val/test on one dataset
   #   cross_dataset_adaptation   = train on source datasets, test target, adapt with normal target data, test again
   #   both                       = run in_domain first, then cross_dataset_adaptation
-  case: in_domain
+  case: cross_dataset_adaptation
 
 paths:
   data_dir: "datasets"
@@ -17,7 +17,7 @@ split_files:
 
 data:
   # Used for in-domain runs.
-  dataset_name: SP_150MB_ratio
+  dataset_name: xxx
 
   # All datasets already have preprocessed windows/sequences in Node_block_id.
   # The code uses this column as the RL episode boundary.
@@ -85,10 +85,10 @@ adaptation:
   # source_datasets are used for source training.
   # target_dataset is used for direct-transfer evaluation and adaptation.
   source_datasets:
-    - XX
-    - XX
-    - XX
-  target_dataset: XXX
+    - BGL
+   # - XX
+   # - XX
+  target_dataset: HDFS
 
   # Target adaptation uses only normal target training sequences.
   target_normal_fraction: 0.20
