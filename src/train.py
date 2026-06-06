@@ -67,6 +67,22 @@ def train_dqn_on_sequences(
     epsilon_end: Optional[float] = None,
     epsilon_decay_steps: Optional[int] = None,
 ):
+    """
+    Train or fine-tune the DQN agent on a list of log sequences.
+
+    Important:
+    evaluate_policy() sets model.eval().
+    Therefore, before additional training/adaptation, we must call model.train().
+    Otherwise, CUDA/cuDNN GRU backward can fail with:
+        RuntimeError: cudnn RNN backward can only be called in training mode
+    """
+
+    # Fix for cross-dataset adaptation after evaluation.
+    model.train()
+
+    if hasattr(model, "gru"):
+        model.gru.flatten_parameters()
+
     env = LogAnomalyEnv(
         sequences=sequences,
         sequence_length=cfg["sequence"]["sequence_length"],
@@ -89,6 +105,9 @@ def train_dqn_on_sequences(
 
     target_model.load_state_dict(model.state_dict())
     target_model.eval()
+
+    if hasattr(target_model, "gru"):
+        target_model.gru.flatten_parameters()
 
     optimizer = torch.optim.Adam(
         model.parameters(),
@@ -147,6 +166,9 @@ def train_dqn_on_sequences(
     )
 
     for step in progress_bar:
+        # Keep the online model in train mode.
+        model.train()
+
         epsilon = linear_epsilon(
             step=step,
             start=eps_start,
@@ -197,8 +219,11 @@ def train_dqn_on_sequences(
             ).squeeze(1)
 
             with torch.no_grad():
+                target_model.eval()
+
                 next_q_values = target_model(next_states)
                 max_next_q_values = next_q_values.max(dim=1).values
+
                 target_q = rewards + gamma * (1.0 - dones) * max_next_q_values
 
             loss = F.smooth_l1_loss(
@@ -218,6 +243,10 @@ def train_dqn_on_sequences(
 
         if step % target_update_steps == 0:
             target_model.load_state_dict(model.state_dict())
+            target_model.eval()
+
+            if hasattr(target_model, "gru"):
+                target_model.gru.flatten_parameters()
 
         if step % 500 == 0:
             avg_reward = (
@@ -300,8 +329,13 @@ def print_final_test_summary(test_result, dataset_name):
 
     print(f"Dataset               : {dataset_name}")
     print(f"Number of sequences   : {m['num_sequences']}")
-    print(f"Decision threshold    : {m['decision_threshold']:.4f}")
-    print(f"Minimum alert step    : {m['min_alert_step']}")
+
+    if "decision_threshold" in m:
+        print(f"Decision threshold    : {m['decision_threshold']:.4f}")
+
+    if "min_alert_step" in m:
+        print(f"Minimum alert step    : {m['min_alert_step']}")
+
     print()
 
     print("[Classification Metrics]")
