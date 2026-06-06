@@ -20,12 +20,7 @@ def select_action(model, state, epsilon, device):
         return random.randint(0, 1)
 
     with torch.no_grad():
-        state_tensor = torch.tensor(
-            state,
-            dtype=torch.long,
-            device=device
-        ).unsqueeze(0)
-
+        state_tensor = torch.tensor(state, dtype=torch.long, device=device).unsqueeze(0)
         q_values = model(state_tensor)
         return int(torch.argmax(q_values, dim=1).item())
 
@@ -39,7 +34,7 @@ def build_model_and_embeddings(cfg, template_to_id, device):
         model_name=cfg["slm"]["model_name"],
         cache_dir=cfg["slm"]["cache_dir"],
         batch_size=cfg["slm"]["batch_size"],
-        device=device
+        device=device,
     ).to(device)
 
     vocab_size = len(template_to_id) + 1
@@ -49,7 +44,7 @@ def build_model_and_embeddings(cfg, template_to_id, device):
         id_embedding_dim=cfg["model"]["id_embedding_dim"],
         hidden_dim=cfg["model"]["hidden_dim"],
         slm_embedding_matrix=slm_embedding_matrix,
-        num_actions=2
+        num_actions=2,
     ).to(device)
 
     return model, slm_embedding_matrix, vocab_size
@@ -68,18 +63,12 @@ def train_dqn_on_sequences(
     epsilon_decay_steps: Optional[int] = None,
 ):
     """
-    Train or fine-tune the DQN agent on a list of log sequences.
+    Train the DQN agent on log sequences.
 
-    Important:
-    evaluate_policy() sets model.eval().
-    Therefore, before additional training/adaptation, we must call model.train().
-    Otherwise, CUDA/cuDNN GRU backward can fail with:
-        RuntimeError: cudnn RNN backward can only be called in training mode
+    model.train() is called explicitly because evaluation uses model.eval().
+    This also prevents CUDA/cuDNN GRU backward errors if training continues later.
     """
-
-    # Fix for cross-dataset adaptation after evaluation.
     model.train()
-
     if hasattr(model, "gru"):
         model.gru.flatten_parameters()
 
@@ -92,7 +81,7 @@ def train_dqn_on_sequences(
         missed_anomaly_penalty=cfg["env"]["missed_anomaly_penalty"],
         correct_normal_reward=cfg["env"]["correct_normal_reward"],
         early_detection_bonus=cfg["env"]["early_detection_bonus"],
-        shuffle=True
+        shuffle=True,
     )
 
     target_model = SLM_DQN(
@@ -100,180 +89,90 @@ def train_dqn_on_sequences(
         id_embedding_dim=cfg["model"]["id_embedding_dim"],
         hidden_dim=cfg["model"]["hidden_dim"],
         slm_embedding_matrix=model.slm_embedding.weight.detach().clone(),
-        num_actions=2
+        num_actions=2,
     ).to(device)
-
     target_model.load_state_dict(model.state_dict())
     target_model.eval()
-
     if hasattr(target_model, "gru"):
         target_model.gru.flatten_parameters()
 
     optimizer = torch.optim.Adam(
         model.parameters(),
-        lr=float(
-            learning_rate
-            if learning_rate is not None
-            else cfg["model"]["learning_rate"]
-        )
+        lr=float(learning_rate if learning_rate is not None else cfg["model"]["learning_rate"]),
     )
 
-    replay_buffer = ReplayBuffer(
-        capacity=cfg["model"]["replay_capacity"]
-    )
+    replay_buffer = ReplayBuffer(capacity=cfg["model"]["replay_capacity"])
 
     gamma = cfg["model"]["gamma"]
     batch_size = cfg["model"]["batch_size"]
-
-    total_steps = int(
-        train_steps
-        if train_steps is not None
-        else cfg["model"]["train_steps"]
-    )
-
-    warmup_steps = min(
-        int(cfg["model"]["warmup_steps"]),
-        max(1, len(sequences))
-    )
-
+    total_steps = int(train_steps if train_steps is not None else cfg["model"]["train_steps"])
+    warmup_steps = min(int(cfg["model"]["warmup_steps"]), max(1, len(sequences)))
     target_update_steps = cfg["model"]["target_update_steps"]
 
-    eps_start = float(
-        epsilon_start
-        if epsilon_start is not None
-        else cfg["model"]["epsilon_start"]
-    )
-
-    eps_end = float(
-        epsilon_end
-        if epsilon_end is not None
-        else cfg["model"]["epsilon_end"]
-    )
-
-    eps_decay = int(
-        epsilon_decay_steps
-        if epsilon_decay_steps is not None
-        else cfg["model"]["epsilon_decay_steps"]
-    )
+    eps_start = float(epsilon_start if epsilon_start is not None else cfg["model"]["epsilon_start"])
+    eps_end = float(epsilon_end if epsilon_end is not None else cfg["model"]["epsilon_end"])
+    eps_decay = int(epsilon_decay_steps if epsilon_decay_steps is not None else cfg["model"]["epsilon_decay_steps"])
 
     state = env.reset()
     episode_reward = 0.0
     recent_rewards = []
 
-    progress_bar = tqdm(
-        range(1, total_steps + 1),
-        desc=phase_name
-    )
+    progress_bar = tqdm(range(1, total_steps + 1), desc=phase_name)
 
     for step in progress_bar:
-        # Keep the online model in train mode.
         model.train()
+        epsilon = linear_epsilon(step=step, start=eps_start, end=eps_end, decay_steps=eps_decay)
 
-        epsilon = linear_epsilon(
-            step=step,
-            start=eps_start,
-            end=eps_end,
-            decay_steps=eps_decay
-        )
-
-        action = select_action(
-            model=model,
-            state=state,
-            epsilon=epsilon,
-            device=device
-        )
-
+        action = select_action(model=model, state=state, epsilon=epsilon, device=device)
         next_state, reward, done, _ = env.step(action)
 
-        replay_buffer.push(
-            state,
-            action,
-            reward,
-            next_state,
-            done
-        )
-
+        replay_buffer.push(state, action, reward, next_state, done)
         state = next_state
         episode_reward += reward
 
         if done:
             recent_rewards.append(episode_reward)
-
             if len(recent_rewards) > 100:
                 recent_rewards.pop(0)
-
             state = env.reset()
             episode_reward = 0.0
 
         if len(replay_buffer) >= warmup_steps:
             states, actions, rewards, next_states, dones = replay_buffer.sample(
                 batch_size=min(batch_size, len(replay_buffer)),
-                device=device
+                device=device,
             )
 
             q_values = model(states)
-
-            q_selected = q_values.gather(
-                1,
-                actions.unsqueeze(1)
-            ).squeeze(1)
+            q_selected = q_values.gather(1, actions.unsqueeze(1)).squeeze(1)
 
             with torch.no_grad():
                 target_model.eval()
-
                 next_q_values = target_model(next_states)
                 max_next_q_values = next_q_values.max(dim=1).values
-
                 target_q = rewards + gamma * (1.0 - dones) * max_next_q_values
 
-            loss = F.smooth_l1_loss(
-                q_selected,
-                target_q
-            )
+            loss = F.smooth_l1_loss(q_selected, target_q)
 
             optimizer.zero_grad()
             loss.backward()
-
-            torch.nn.utils.clip_grad_norm_(
-                model.parameters(),
-                max_norm=5.0
-            )
-
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
             optimizer.step()
 
         if step % target_update_steps == 0:
             target_model.load_state_dict(model.state_dict())
             target_model.eval()
-
             if hasattr(target_model, "gru"):
                 target_model.gru.flatten_parameters()
 
         if step % 500 == 0:
-            avg_reward = (
-                sum(recent_rewards) / len(recent_rewards)
-                if recent_rewards
-                else 0.0
-            )
-
-            progress_bar.set_postfix(
-                {
-                    "epsilon": f"{epsilon:.3f}",
-                    "avg_reward": f"{avg_reward:.3f}"
-                }
-            )
+            avg_reward = sum(recent_rewards) / len(recent_rewards) if recent_rewards else 0.0
+            progress_bar.set_postfix({"epsilon": f"{epsilon:.3f}", "avg_reward": f"{avg_reward:.3f}"})
 
     return model
 
 
-def save_checkpoint(
-    path,
-    model,
-    template_to_id,
-    vocab_size,
-    slm_embedding_matrix,
-    cfg,
-    extra=None
-):
+def save_checkpoint(path, model, template_to_id, vocab_size, slm_embedding_matrix, cfg, extra=None):
     ensure_dir(str(Path(path).parent))
 
     payload = {
@@ -287,55 +186,27 @@ def save_checkpoint(
     if extra:
         payload.update(extra)
 
-    torch.save(
-        payload,
-        path
-    )
-
+    torch.save(payload, path)
     print(f"Saved checkpoint to: {path}")
 
 
 def print_final_test_summary(test_result, dataset_name):
-    """
-    Print compact test metrics at the very end of the CMD output.
-    """
     m = test_result["metrics"]
 
     auroc_text = "N/A" if m["auroc"] is None else f"{m['auroc']:.4f}"
     auprc_text = "N/A" if m["auprc"] is None else f"{m['auprc']:.4f}"
-
-    avg_step_text = (
-        "N/A"
-        if m["average_detection_step"] is None
-        else f"{m['average_detection_step']:.4f}"
-    )
-
-    avg_ratio_text = (
-        "N/A"
-        if m["average_detection_ratio"] is None
-        else f"{m['average_detection_ratio']:.4f}"
-    )
-
-    median_ratio_text = (
-        "N/A"
-        if m["median_detection_ratio"] is None
-        else f"{m['median_detection_ratio']:.4f}"
-    )
+    avg_step_text = "N/A" if m["average_detection_step"] is None else f"{m['average_detection_step']:.4f}"
+    avg_ratio_text = "N/A" if m["average_detection_ratio"] is None else f"{m['average_detection_ratio']:.4f}"
+    median_ratio_text = "N/A" if m["median_detection_ratio"] is None else f"{m['median_detection_ratio']:.4f}"
 
     print()
     print("#" * 80)
-    print("FINAL TEST RESULTS SUMMARY")
+    print(f"{dataset_name}: FINAL TEST RESULTS SUMMARY")
     print("#" * 80)
-
     print(f"Dataset               : {dataset_name}")
     print(f"Number of sequences   : {m['num_sequences']}")
-
-    if "decision_threshold" in m:
-        print(f"Decision threshold    : {m['decision_threshold']:.4f}")
-
-    if "min_alert_step" in m:
-        print(f"Minimum alert step    : {m['min_alert_step']}")
-
+    print(f"Decision threshold    : {m['decision_threshold']:.4f}")
+    print(f"Minimum alert step    : {m['min_alert_step']}")
     print()
 
     print("[Classification Metrics]")
@@ -345,6 +216,7 @@ def print_final_test_summary(test_result, dataset_name):
     print(f"Recall / TPR          : {m['recall']:.4f}")
     print(f"Specificity / TNR     : {m['specificity_tnr']:.4f}")
     print(f"F1-score              : {m['f1_score']:.4f}")
+    print(f"F2-score              : {m['f2_score']:.4f}")
     print(f"FPR                   : {m['fpr']:.4f}")
     print(f"FNR                   : {m['fnr']:.4f}")
     print(f"MCC                   : {m['mcc']:.4f}")
@@ -383,7 +255,6 @@ def print_final_test_summary(test_result, dataset_name):
     print(f"Delay total cost      : {m['delay_total_cost']:.4f}")
     print(f"Total cost            : {m['total_cost']:.4f}")
     print(f"Avg cost / sequence   : {m['average_cost_per_sequence']:.4f}")
-
     print("#" * 80)
     print()
 
@@ -392,39 +263,22 @@ def train_in_domain(config_path: str = "config.yaml"):
     cfg = load_config(config_path)
     set_seed(cfg["data"]["random_seed"])
 
-    device = torch.device(
-        "cuda" if torch.cuda.is_available()
-        else "cpu"
-    )
-
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
     dataset_name = str(cfg["data"]["dataset_name"])
     print(f"In-domain dataset: {dataset_name}")
 
-    train_sequences, val_sequences, test_sequences, template_to_id = (
-        load_split_sequences_from_config(cfg)
-    )
+    train_sequences, val_sequences, test_sequences, template_to_id = load_split_sequences_from_config(cfg)
 
-    describe_sequences(
-        train_sequences,
-        "Train"
-    )
-
-    describe_sequences(
-        val_sequences,
-        "Validation"
-    )
-
-    describe_sequences(
-        test_sequences,
-        "Test"
-    )
+    describe_sequences(train_sequences, "Train")
+    describe_sequences(val_sequences, "Validation")
+    describe_sequences(test_sequences, "Test")
 
     model, slm_embedding_matrix, vocab_size = build_model_and_embeddings(
         cfg=cfg,
         template_to_id=template_to_id,
-        device=device
+        device=device,
     )
 
     train_dqn_on_sequences(
@@ -432,7 +286,7 @@ def train_in_domain(config_path: str = "config.yaml"):
         sequences=train_sequences,
         cfg=cfg,
         device=device,
-        phase_name="In-domain training"
+        phase_name="In-domain training",
     )
 
     print("\nValidation result before threshold calibration:")
@@ -441,25 +295,18 @@ def train_in_domain(config_path: str = "config.yaml"):
         sequences=val_sequences,
         cfg=cfg,
         device=device,
-        name=f"{dataset_name} Validation"
+        name=f"{dataset_name} Validation",
     )
 
-    if bool(
-        cfg.get("evaluation", {}).get(
-            "tune_threshold_on_validation",
-            False
-        )
-    ):
+    if bool(cfg.get("evaluation", {}).get("tune_threshold_on_validation", False)):
         best_threshold, threshold_val_result = tune_decision_threshold(
             model=model,
             val_sequences=val_sequences,
             cfg=cfg,
-            device=device
+            device=device,
         )
-
         print()
         print(f"Using calibrated threshold for test: {best_threshold:.4f}")
-
         val_result = threshold_val_result
 
     print("\nFinal in-domain test result:")
@@ -468,14 +315,10 @@ def train_in_domain(config_path: str = "config.yaml"):
         sequences=test_sequences,
         cfg=cfg,
         device=device,
-        name=f"{dataset_name} Test"
+        name=f"{dataset_name} Test",
     )
 
-    checkpoint_path = (
-        Path(cfg["output"]["output_dir"])
-        / cfg["output"]["checkpoint_name"]
-    )
-
+    checkpoint_path = Path(cfg["output"]["output_dir"]) / cfg["output"]["checkpoint_name"]
     save_checkpoint(
         path=checkpoint_path,
         model=model,
@@ -486,20 +329,10 @@ def train_in_domain(config_path: str = "config.yaml"):
         extra={
             "experiment_type": "in_domain",
             "dataset_name": dataset_name,
-            "decision_threshold": cfg.get("evaluation", {}).get(
-                "decision_threshold",
-                0.0
-            )
-        }
+            "decision_threshold": cfg.get("evaluation", {}).get("decision_threshold", 0.0),
+        },
     )
 
-    print_final_test_summary(
-        test_result=test_result,
-        dataset_name=dataset_name
-    )
+    print_final_test_summary(test_result=test_result, dataset_name=dataset_name)
 
-    return {
-        "model": model,
-        "validation": val_result,
-        "test": test_result,
-    }
+    return {"model": model, "validation": val_result, "test": test_result}

@@ -12,6 +12,7 @@ from sklearn.metrics import (
     precision_score,
     recall_score,
     f1_score,
+    fbeta_score,
     confusion_matrix,
     classification_report,
     matthews_corrcoef,
@@ -35,22 +36,12 @@ def _safe_json_value(value):
     return value
 
 
-def run_one_episode(
-    env,
-    model,
-    device,
-    decision_threshold=0.0,
-    min_alert_step=0
-):
+def run_one_episode(env, model, device, decision_threshold=0.0, min_alert_step=0):
     """
-    Run one episode.
+    Run one RL episode with calibrated decision threshold.
 
-    Post-hoc calibration:
-        Alert only if Q_alert - Q_continue >= decision_threshold.
-
-    min_alert_step:
-        Prevents the agent from alerting too early.
-        Example: min_alert_step=1 means no alert at step 0.
+    Alert rule:
+        Q_alert - Q_continue >= decision_threshold
     """
     state = env.reset()
     done = False
@@ -70,20 +61,14 @@ def run_one_episode(
     final_q_margin = None
 
     while not done:
-        state_tensor = torch.tensor(
-            state,
-            dtype=torch.long,
-            device=device
-        ).unsqueeze(0)
+        state_tensor = torch.tensor(state, dtype=torch.long, device=device).unsqueeze(0)
 
         with torch.no_grad():
             q_values = model(state_tensor)
-
             q_continue = float(q_values[0, 0].item())
             q_alert = float(q_values[0, 1].item())
             q_margin = q_alert - q_continue
 
-            # Calibrated decision rule.
             if env.t < min_alert_step:
                 action = 0
             else:
@@ -91,13 +76,11 @@ def run_one_episode(
 
         max_q_alert = max(max_q_alert, q_alert)
         max_q_margin = max(max_q_margin, q_margin)
-
         final_q_continue = q_continue
         final_q_alert = q_alert
         final_q_margin = q_margin
 
         next_state, reward, done, info = env.step(action)
-
         total_reward += reward
         state = next_state
 
@@ -127,12 +110,7 @@ def run_one_episode(
 
 
 def compute_confusion_metrics(y_true, y_pred):
-    cm = confusion_matrix(
-        y_true,
-        y_pred,
-        labels=[0, 1]
-    )
-
+    cm = confusion_matrix(y_true, y_pred, labels=[0, 1])
     tn, fp, fn, tp = cm.ravel()
 
     return {
@@ -146,6 +124,7 @@ def compute_confusion_metrics(y_true, y_pred):
         "recall": float(recall_score(y_true, y_pred, zero_division=0)),
         "specificity_tnr": float(tn / max(1, tn + fp)),
         "f1_score": float(f1_score(y_true, y_pred, zero_division=0)),
+        "f2_score": float(fbeta_score(y_true, y_pred, beta=2.0, zero_division=0)),
         "fpr": float(fp / max(1, fp + tn)),
         "fnr": float(fn / max(1, fn + tp)),
         "mcc": float(matthews_corrcoef(y_true, y_pred)),
@@ -155,10 +134,7 @@ def compute_confusion_metrics(y_true, y_pred):
 
 def compute_score_metrics(y_true, anomaly_scores):
     if len(set(y_true)) < 2:
-        return {
-            "auroc": None,
-            "auprc": None
-        }
+        return {"auroc": None, "auprc": None}
 
     try:
         auroc = float(roc_auc_score(y_true, anomaly_scores))
@@ -170,20 +146,15 @@ def compute_score_metrics(y_true, anomaly_scores):
     except ValueError:
         auprc = None
 
-    return {
-        "auroc": auroc,
-        "auprc": auprc
-    }
+    return {"auroc": auroc, "auprc": auprc}
 
 
 def compute_early_detection_metrics(results):
     detection_steps = []
     detection_ratios = []
-
     early_25 = 0
     early_50 = 0
     early_75 = 0
-
     detected_anomalies = 0
     total_anomalies = 0
 
@@ -191,18 +162,9 @@ def compute_early_detection_metrics(results):
         if item["true_label"] == 1:
             total_anomalies += 1
 
-        if (
-            item["true_label"] == 1
-            and item["predicted_label"] == 1
-            and item["detection_step"] is not None
-        ):
+        if item["true_label"] == 1 and item["predicted_label"] == 1 and item["detection_step"] is not None:
             detected_anomalies += 1
-
-            ratio = item["detection_step"] / max(
-                1,
-                item["sequence_length"] - 1
-            )
-
+            ratio = item["detection_step"] / max(1, item["sequence_length"] - 1)
             detection_steps.append(item["detection_step"])
             detection_ratios.append(ratio)
 
@@ -216,18 +178,10 @@ def compute_early_detection_metrics(results):
     return {
         "total_anomalies": int(total_anomalies),
         "detected_anomalies": int(detected_anomalies),
-        "anomaly_detection_coverage": float(
-            detected_anomalies / max(1, total_anomalies)
-        ),
-        "average_detection_step": (
-            None if not detection_steps else float(np.mean(detection_steps))
-        ),
-        "average_detection_ratio": (
-            None if not detection_ratios else float(np.mean(detection_ratios))
-        ),
-        "median_detection_ratio": (
-            None if not detection_ratios else float(np.median(detection_ratios))
-        ),
+        "anomaly_detection_coverage": float(detected_anomalies / max(1, total_anomalies)),
+        "average_detection_step": None if not detection_steps else float(np.mean(detection_steps)),
+        "average_detection_ratio": None if not detection_ratios else float(np.mean(detection_ratios)),
+        "median_detection_ratio": None if not detection_ratios else float(np.median(detection_ratios)),
         "edr_25": float(early_25 / max(1, detected_anomalies)),
         "edr_50": float(early_50 / max(1, detected_anomalies)),
         "edr_75": float(early_75 / max(1, detected_anomalies)),
@@ -236,7 +190,6 @@ def compute_early_detection_metrics(results):
 
 def compute_cost_metrics(results, cfg):
     eval_cfg = cfg.get("evaluation", {})
-
     fp_unit = float(eval_cfg.get("false_positive_cost", 10.0))
     fn_unit = float(eval_cfg.get("false_negative_cost", 20.0))
     delay_unit = float(eval_cfg.get("delay_cost", 5.0))
@@ -251,15 +204,10 @@ def compute_cost_metrics(results, cfg):
 
         if y == 0 and pred == 1:
             fp_total += fp_unit
-
         elif y == 1 and pred == 0:
             fn_total += fn_unit
-
         elif y == 1 and pred == 1:
-            ratio = item["detection_step"] / max(
-                1,
-                item["sequence_length"] - 1
-            )
+            ratio = item["detection_step"] / max(1, item["sequence_length"] - 1)
             delay_total += delay_unit * ratio
 
     total = fp_total + fn_total + delay_total
@@ -278,35 +226,19 @@ def compute_cost_metrics(results, cfg):
 
 def save_evaluation_outputs(results, metrics, cfg, name):
     eval_cfg = cfg.get("evaluation", {})
-
     if not bool(eval_cfg.get("save_results", False)):
         return
 
-    results_dir = Path(
-        eval_cfg.get(
-            "results_dir",
-            "outputs/evaluation_results"
-        )
-    )
-
+    results_dir = Path(eval_cfg.get("results_dir", "outputs/evaluation_results"))
     ensure_dir(str(results_dir))
 
-    safe_name = (
-        name.lower()
-        .replace(" ", "_")
-        .replace("/", "_")
-    )
-
+    safe_name = name.lower().replace(" ", "_").replace("/", "_")
     predictions_path = results_dir / f"{safe_name}_predictions.csv"
     metrics_path = results_dir / f"{safe_name}_metrics.json"
 
-    pd.DataFrame(results).to_csv(
-        predictions_path,
-        index=False
-    )
+    pd.DataFrame(results).to_csv(predictions_path, index=False)
 
     json_metrics = {}
-
     for key, value in metrics.items():
         if key == "confusion_matrix":
             json_metrics[key] = value.tolist()
@@ -314,11 +246,7 @@ def save_evaluation_outputs(results, metrics, cfg, name):
             json_metrics[key] = _safe_json_value(value)
 
     with open(metrics_path, "w", encoding="utf-8") as file:
-        json.dump(
-            json_metrics,
-            file,
-            indent=2
-        )
+        json.dump(json_metrics, file, indent=2)
 
     print()
     print(f"Saved predictions: {predictions_path}")
@@ -342,6 +270,7 @@ def print_metric_report(metrics, y_true, y_pred, name):
     print(f"Recall / TPR          : {metrics['recall']:.4f}")
     print(f"Specificity / TNR     : {metrics['specificity_tnr']:.4f}")
     print(f"F1-score              : {metrics['f1_score']:.4f}")
+    print(f"F2-score              : {metrics['f2_score']:.4f}")
     print(f"FPR                   : {metrics['fpr']:.4f}")
     print(f"FNR                   : {metrics['fnr']:.4f}")
     print(f"MCC                   : {metrics['mcc']:.4f}")
@@ -353,14 +282,7 @@ def print_metric_report(metrics, y_true, y_pred, name):
     print(metrics["confusion_matrix"])
 
     print("\n[Classification Report]")
-    print(
-        classification_report(
-            y_true,
-            y_pred,
-            target_names=["normal", "anomaly"],
-            zero_division=0
-        )
-    )
+    print(classification_report(y_true, y_pred, target_names=["normal", "anomaly"], zero_division=0))
 
     print("\n[Early Detection Metrics]")
     print(f"Total anomalies       : {metrics['total_anomalies']}")
@@ -390,15 +312,7 @@ def print_metric_report(metrics, y_true, y_pred, name):
     print("\n" + "=" * 70)
 
 
-def evaluate_policy(
-    model,
-    sequences,
-    cfg,
-    device,
-    name="Evaluation",
-    print_report=True,
-    save_outputs=True
-):
+def evaluate_policy(model, sequences, cfg, device, name="Evaluation", print_report=True, save_outputs=True):
     env = LogAnomalyEnv(
         sequences=sequences,
         sequence_length=cfg["sequence"]["sequence_length"],
@@ -408,34 +322,19 @@ def evaluate_policy(
         missed_anomaly_penalty=cfg["env"]["missed_anomaly_penalty"],
         correct_normal_reward=cfg["env"]["correct_normal_reward"],
         early_detection_bonus=cfg["env"]["early_detection_bonus"],
-        shuffle=False
+        shuffle=False,
     )
 
     eval_cfg = cfg.get("evaluation", {})
-
-    decision_threshold = float(
-        eval_cfg.get("decision_threshold", 0.0)
-    )
-
-    min_alert_step = int(
-        eval_cfg.get("min_alert_step", 0)
-    )
-
-    show_progress = bool(
-        eval_cfg.get("show_progress", True)
-    )
+    decision_threshold = float(eval_cfg.get("decision_threshold", 0.0))
+    min_alert_step = int(eval_cfg.get("min_alert_step", 0))
+    show_progress = bool(eval_cfg.get("show_progress", True))
 
     model.eval()
     results = []
-
     iterator = range(len(sequences))
-
     if show_progress:
-        iterator = tqdm(
-            iterator,
-            desc=f"Evaluating {name}",
-            unit="seq"
-        )
+        iterator = tqdm(iterator, desc=f"Evaluating {name}", unit="seq")
 
     for _ in iterator:
         results.append(
@@ -444,55 +343,20 @@ def evaluate_policy(
                 model=model,
                 device=device,
                 decision_threshold=decision_threshold,
-                min_alert_step=min_alert_step
+                min_alert_step=min_alert_step,
             )
         )
 
-    y_true = [
-        item["true_label"]
-        for item in results
-    ]
-
-    y_pred = [
-        item["predicted_label"]
-        for item in results
-    ]
-
-    anomaly_scores = [
-        item["max_q_margin"]
-        for item in results
-    ]
-
-    rewards = [
-        item["reward"]
-        for item in results
-    ]
+    y_true = [item["true_label"] for item in results]
+    y_pred = [item["predicted_label"] for item in results]
+    anomaly_scores = [item["max_q_margin"] for item in results]
+    rewards = [item["reward"] for item in results]
 
     metrics = {}
-    metrics.update(
-        compute_confusion_metrics(
-            y_true,
-            y_pred
-        )
-    )
-    metrics.update(
-        compute_score_metrics(
-            y_true,
-            anomaly_scores
-        )
-    )
-    metrics.update(
-        compute_early_detection_metrics(
-            results
-        )
-    )
-    metrics.update(
-        compute_cost_metrics(
-            results,
-            cfg
-        )
-    )
-
+    metrics.update(compute_confusion_metrics(y_true, y_pred))
+    metrics.update(compute_score_metrics(y_true, anomaly_scores))
+    metrics.update(compute_early_detection_metrics(results))
+    metrics.update(compute_cost_metrics(results, cfg))
     metrics["average_reward"] = float(np.mean(rewards))
     metrics["alert_rate"] = float(np.mean(y_pred)) if y_pred else 0.0
     metrics["num_sequences"] = int(len(results))
@@ -500,77 +364,23 @@ def evaluate_policy(
     metrics["min_alert_step"] = int(min_alert_step)
 
     if print_report:
-        print_metric_report(
-            metrics,
-            y_true,
-            y_pred,
-            name
-        )
+        print_metric_report(metrics, y_true, y_pred, name)
 
     if save_outputs:
-        save_evaluation_outputs(
-            results,
-            metrics,
-            cfg,
-            name
-        )
+        save_evaluation_outputs(results, metrics, cfg, name)
 
-    return {
-        "y_true": y_true,
-        "y_pred": y_pred,
-        "anomaly_scores": anomaly_scores,
-        "results": results,
-        "metrics": metrics,
-    }
+    return {"y_true": y_true, "y_pred": y_pred, "anomaly_scores": anomaly_scores, "results": results, "metrics": metrics}
 
 
-def tune_decision_threshold(
-    model,
-    val_sequences,
-    cfg,
-    device
-):
-    """
-    Tune decision threshold on validation data.
-
-    The selected threshold is stored in:
-        cfg["evaluation"]["decision_threshold"]
-
-    Supported metrics:
-        f1
-        cost
-        precision
-        recall
-        balanced_accuracy
-    """
+def tune_decision_threshold(model, val_sequences, cfg, device):
     eval_cfg = cfg.setdefault("evaluation", {})
+    threshold_min = float(eval_cfg.get("threshold_min", -10.0))
+    threshold_max = float(eval_cfg.get("threshold_max", 5.0))
+    threshold_steps = int(eval_cfg.get("threshold_steps", 100))
+    threshold_metric = str(eval_cfg.get("threshold_metric", "f2")).lower()
+    original_threshold = float(eval_cfg.get("decision_threshold", 0.0))
 
-    threshold_min = float(
-        eval_cfg.get("threshold_min", -2.0)
-    )
-
-    threshold_max = float(
-        eval_cfg.get("threshold_max", 5.0)
-    )
-
-    threshold_steps = int(
-        eval_cfg.get("threshold_steps", 50)
-    )
-
-    threshold_metric = str(
-        eval_cfg.get("threshold_metric", "f1")
-    ).lower()
-
-    original_threshold = float(
-        eval_cfg.get("decision_threshold", 0.0)
-    )
-
-    thresholds = np.linspace(
-        threshold_min,
-        threshold_max,
-        threshold_steps
-    )
-
+    thresholds = np.linspace(threshold_min, threshold_max, threshold_steps)
     best_threshold = original_threshold
     best_score = -float("inf")
     best_result = None
@@ -583,13 +393,8 @@ def tune_decision_threshold(
     print(f"Threshold range : {threshold_min} to {threshold_max}")
     print(f"Steps           : {threshold_steps}")
 
-    for threshold in tqdm(
-        thresholds,
-        desc="Threshold tuning",
-        unit="thr"
-    ):
+    for threshold in tqdm(thresholds, desc="Threshold tuning", unit="thr"):
         eval_cfg["decision_threshold"] = float(threshold)
-
         result = evaluate_policy(
             model=model,
             sequences=val_sequences,
@@ -597,25 +402,22 @@ def tune_decision_threshold(
             device=device,
             name=f"Validation threshold {threshold:.4f}",
             print_report=False,
-            save_outputs=False
+            save_outputs=False,
         )
-
         metrics = result["metrics"]
 
         if threshold_metric == "cost":
             score = -metrics["total_cost"]
-
         elif threshold_metric == "precision":
             score = metrics["precision"]
-
         elif threshold_metric == "recall":
             score = metrics["recall"]
-
         elif threshold_metric == "balanced_accuracy":
             score = metrics["balanced_accuracy"]
-
-        else:
+        elif threshold_metric == "f1":
             score = metrics["f1_score"]
+        else:
+            score = metrics["f2_score"]
 
         if score > best_score:
             best_score = score
@@ -635,58 +437,34 @@ def tune_decision_threshold(
     if best_result is not None:
         m = best_result["metrics"]
         print(f"Validation F1  : {m['f1_score']:.4f}")
+        print(f"Validation F2  : {m['f2_score']:.4f}")
         print(f"Validation P   : {m['precision']:.4f}")
         print(f"Validation R   : {m['recall']:.4f}")
         print(f"Validation FPR : {m['fpr']:.4f}")
         print(f"Validation Cost: {m['total_cost']:.4f}")
-
     print("=" * 70)
 
     return best_threshold, best_result
 
 
-def evaluate_checkpoint(
-    checkpoint_path: str,
-    config_path: str = "config.yaml"
-):
+def evaluate_checkpoint(checkpoint_path: str, config_path: str = "config.yaml"):
     cfg = load_config(config_path)
     set_seed(cfg["data"]["random_seed"])
 
-    device = torch.device(
-        "cuda" if torch.cuda.is_available()
-        else "cpu"
-    )
-
-    checkpoint = torch.load(
-        checkpoint_path,
-        map_location=device
-    )
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    checkpoint = torch.load(checkpoint_path, map_location=device)
 
     _, _, test_sequences, _ = load_split_sequences_from_config(cfg)
-
-    describe_sequences(
-        test_sequences,
-        "Test"
-    )
+    describe_sequences(test_sequences, "Test")
 
     slm_embedding_matrix = checkpoint["slm_embedding_matrix"].to(device)
-
     model = SLM_DQN(
         vocab_size=checkpoint["vocab_size"],
         id_embedding_dim=cfg["model"]["id_embedding_dim"],
         hidden_dim=cfg["model"]["hidden_dim"],
         slm_embedding_matrix=slm_embedding_matrix,
-        num_actions=2
+        num_actions=2,
     ).to(device)
+    model.load_state_dict(checkpoint["model_state_dict"])
 
-    model.load_state_dict(
-        checkpoint["model_state_dict"]
-    )
-
-    return evaluate_policy(
-        model=model,
-        sequences=test_sequences,
-        cfg=cfg,
-        device=device,
-        name="Test"
-    )
+    return evaluate_policy(model=model, sequences=test_sequences, cfg=cfg, device=device, name="Test")

@@ -1,10 +1,6 @@
 experiment:
-  # Choose one case and run with: python main.py --config config.yaml
-  # Options:
-  #   in_domain                  = train/val/test on one dataset
-  #   cross_dataset_adaptation   = train on source datasets, test target, adapt with normal target data, test again
-  #   both                       = run in_domain first, then cross_dataset_adaptation
-  case: cross_dataset_adaptation
+  # This version supports only in-domain experiments.
+  case: in_domain
 
 paths:
   data_dir: "datasets"
@@ -16,13 +12,9 @@ split_files:
   test: "test_df.pkl"
 
 data:
-  # Used for in-domain runs.
-  dataset_name: xxx
-
-  # All datasets already have preprocessed windows/sequences in Node_block_id.
-  # The code uses this column as the RL episode boundary.
+  # Change this for each in-domain run: BGL, HDFS, TH_1G, SP_150MB_ratio, SP_150MB
+  dataset_name: HDFS
   group_col: Node_block_id
-
   time_col: Timestamp
   template_col: EventTemplate
   label_col: Label
@@ -30,37 +22,62 @@ data:
   anomaly_label: Anomaly
   random_seed: 42
 
-# Dataset-specific sequence/group columns.
-# Node_block_id already comes from your preprocessing window step for all datasets.
+# Per-dataset column names. The code can also auto-detect common names.
+dataset_columns:
+  BGL:
+    template_col: EventTemplate
+    label_col: Label
+    time_col: Timestamp
+    group_col: Node_block_id
+  HDFS:
+    template_col: EventTemplate
+    label_col: Label
+    time_col: Timestamp
+    group_col: Node_block_id
+  TH_1G:
+    template_col: EventTemplate
+    label_col: Label
+    time_col: Timestamp
+    group_col: Node_block_id
+  SP_150MB:
+    template_col: EventTemplate
+    label_col: Label
+    time_col: Timestamp
+    group_col: Node_block_id
+  SP_150MB_ratio:
+    template_col: EventTemplate
+    label_col: Label
+    time_col: Timestamp
+    group_col: Node_block_id
+
+# Since preprocessing already created Node_block_id windows,
+# the code groups by Node_block_id and does not create new sliding windows.
 dataset_group_cols:
-  HDFS: Node_block_id
   BGL: Node_block_id
+  HDFS: Node_block_id
   TH_1G: Node_block_id
+  SP_150MB: Node_block_id
   SP_150MB_ratio: Node_block_id
 
 sequence:
-  # group_by_column means: do NOT create new sliding windows.
-  # Instead, assemble each RL episode by grouping rows with the same Node_block_id.
-  # Options: group_by_column, sliding_window, auto
   construction: group_by_column
   sequence_length: 120
   sliding_step: 1
 
 slm:
   enabled: true
-  #model_name: "sentence-transformers/all-MiniLM-L6-v2"
-  model_name: "microsoft/MiniLM-L12-H384-uncased"
-
+  model_name: "sentence-transformers/all-MiniLM-L6-v2"
   freeze: true
   batch_size: 64
   cache_dir: "outputs/slm_cache"
 
 env:
+  # More balanced default rewards for reducing false positives while keeping recall.
   continue_penalty: -0.01
   correct_alert_reward: 10.0
   false_alert_penalty: -20.0
-  missed_anomaly_penalty: -20.0
-  correct_normal_reward: 5.0
+  missed_anomaly_penalty: -30.0
+  correct_normal_reward: 6.0
   early_detection_bonus: 1.0
 
 model:
@@ -77,37 +94,6 @@ model:
   epsilon_end: 0.05
   epsilon_decay_steps: 12000
 
-adaptation:
-  # Cross-dataset experiment.
-  enabled: true
-
-  # Leave-one-target example:
-  # source_datasets are used for source training.
-  # target_dataset is used for direct-transfer evaluation and adaptation.
-  source_datasets:
-    - BGL
-   # - XX
-   # - XX
-  target_dataset: HDFS
-
-  # Target adaptation uses only normal target training sequences.
-  target_normal_fraction: 0.20
-
-  # DQN fine-tuning steps on the 20% normal target training data.
-  adapt_steps: 5000
-  adapt_learning_rate: 0.0001
-
-  # Usually lower exploration during adaptation.
-  epsilon_start: 0.20
-  epsilon_end: 0.05
-  epsilon_decay_steps: 3000
-
-  # Checkpoints.
-  source_checkpoint_name: "cross_source_dqn.pt"
-  adapted_checkpoint_name: "cross_adapted_dqn.pt"
-
-
-
 evaluation:
   show_progress: true
   save_results: true
@@ -117,28 +103,21 @@ evaluation:
   false_negative_cost: 20.0
   delay_cost: 5.0
 
-  # Post-hoc calibration
+  # Validation-based post-hoc calibration.
   tune_threshold_on_validation: true
 
-  # Choose one:
-  #   f1
-  #   cost
-  #   precision
-  #   recall
-  #   balanced_accuracy
-  threshold_metric: f1
+  # Recommended for imbalanced anomaly detection.
+  # Options: f1, f2, cost, precision, recall, balanced_accuracy
+  threshold_metric: f2
 
-  threshold_min: -2.0
+  # Wider range helps datasets such as HDFS where the best threshold may be below -2.
+  threshold_min: -10.0
   threshold_max: 5.0
-  threshold_steps: 50
+  threshold_steps: 100
 
-  # Default threshold before tuning.
   decision_threshold: 0.0
-
-  # Prevent alerting at the first event.
-  # Try 1 first. If false positives are still high, try 2 or 3.
   min_alert_step: 1
 
 output:
   output_dir: outputs
-  checkpoint_name: dqn_minilm_log_anomaly.pt
+  checkpoint_name: indomain_ftadls_dqn.pt
