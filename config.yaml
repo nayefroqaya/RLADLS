@@ -1,3 +1,13 @@
+run:
+  # Options:
+  #   train
+  #   eval_checkpoint
+  mode: eval_checkpoint
+
+  # Used only when mode: eval_checkpoint.
+  # This can point to any checkpoint you already trained.
+  checkpoint_path: "outputs/indomain_ftadls_dqn.pt"
+
 experiment:
   # This version supports only in-domain experiments.
   case: in_domain
@@ -12,38 +22,46 @@ split_files:
   test: "test_df.pkl"
 
 data:
-  # Change this for each in-domain run: BGL, HDFS, TH_1G, SP_150MB_ratio, SP_150MB
+  # Change this for each in-domain run:
+  # BGL, HDFS, TH_1G, SP_150MB, SP_150MB_ratio
   dataset_name: HDFS
+
   group_col: Node_block_id
   time_col: Timestamp
   template_col: EventTemplate
   label_col: Label
+
   normal_label: Normal
   anomaly_label: Anomaly
   random_seed: 42
 
-# Per-dataset column names. The code can also auto-detect common names.
+# Per-dataset column names.
+# The code can also auto-detect common names.
 dataset_columns:
   BGL:
     template_col: EventTemplate
     label_col: Label
     time_col: Timestamp
     group_col: Node_block_id
+
   HDFS:
     template_col: EventTemplate
     label_col: Label
     time_col: Timestamp
     group_col: Node_block_id
+
   TH_1G:
     template_col: EventTemplate
     label_col: Label
     time_col: Timestamp
     group_col: Node_block_id
+
   SP_150MB:
     template_col: EventTemplate
     label_col: Label
     time_col: Timestamp
     group_col: Node_block_id
+
   SP_150MB_ratio:
     template_col: EventTemplate
     label_col: Label
@@ -72,7 +90,8 @@ slm:
   cache_dir: "outputs/slm_cache"
 
 env:
-  # More balanced default rewards for reducing false positives while keeping recall.
+  # Balanced default rewards for reducing false positives
+  # while keeping good recall.
   continue_penalty: -0.01
   correct_alert_reward: 10.0
   false_alert_penalty: -20.0
@@ -103,17 +122,21 @@ evaluation:
   false_negative_cost: 20.0
   delay_cost: 5.0
 
-  # Validation-based post-hoc calibration.
+  # This works without retraining.
   tune_threshold_on_validation: true
 
-  # Recommended for imbalanced anomaly detection.
-  # Options: f1, f2, cost, precision, recall, balanced_accuracy
+  # Options:
+  #   f1
+  #   f2
+  #   cost
+  #   precision
+  #   recall
+  #   balanced_accuracy
   threshold_metric: f2
 
-  # Wider range helps datasets such as HDFS where the best threshold may be below -2.
-  threshold_min: -10.0
+  threshold_min: -20.0
   threshold_max: 5.0
-  threshold_steps: 100
+  threshold_steps: 150
 
   decision_threshold: 0.0
   min_alert_step: 1
