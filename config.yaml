@@ -105,25 +105,25 @@ semi_supervised:
   pseudo_reward_weight: 0.10
 
   # Higher value creates fewer pseudo-anomaly samples.
-  # Use 0.99 because previous setting created too many false alerts.
+  # Use 0.99 to reduce false alerts.
   normal_score_quantile: 0.99
 
   transition_smoothing: 1.0
 
 env:
-  # Safer rewards to reduce false positives.
-  continue_penalty: -0.01
-  correct_alert_reward: 10.0
-  false_alert_penalty: -30.0
-  missed_anomaly_penalty: -40.0
-  correct_normal_reward: 8.0
-  early_detection_bonus: 1.0
+  # Tuned for better early detection while keeping false positives controlled.
+  continue_penalty: -0.03
+  correct_alert_reward: 12.0
+  false_alert_penalty: -25.0
+  missed_anomaly_penalty: -45.0
+  correct_normal_reward: 7.0
+  early_detection_bonus: 3.0
 
 training_sampling:
   enabled: true
 
   # This is pseudo-anomaly sampling, not true anomaly sampling.
-  # Reduced from 0.50 to 0.20 to avoid over-alerting.
+  # It uses reward_label from normal-deviation scoring.
   anomaly_fraction: 0.20
 
   keep_original_size: true
@@ -154,15 +154,23 @@ evaluation:
   delay_cost: 5.0
 
   tune_threshold_on_validation: true
+
+  # Options:
+  #   f1
+  #   f2
+  #   cost
+  #   precision
+  #   recall
+  #   balanced_accuracy
   threshold_metric: f1
 
+  # Faster threshold tuning than 100/150 steps.
   threshold_min: -5.0
   threshold_max: 5.0
   threshold_steps: 25
 
   decision_threshold: 0.0
   min_alert_step: 1
-
 
 output:
   output_dir: outputs
