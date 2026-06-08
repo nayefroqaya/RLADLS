@@ -23,7 +23,7 @@ split_files:
 data:
   # Change this for each in-domain run:
   # BGL, HDFS, TH_1G, SP_150MB, SP_150MB_ratio
-  dataset_name: BGL
+  dataset_name: TH_1G
 
   group_col: Node_block_id
   time_col: Timestamp
@@ -101,30 +101,42 @@ semi_supervised:
   # Unlabeled sequences receive pseudo-rewards from normal-behavior deviation.
   use_pseudo_rewards: true
 
-  # Lower value reduces the influence of uncertain pseudo-labels.
-  pseudo_reward_weight: 0.10
+  # Automatic pseudo-label thresholding.
+  # Instead of manually choosing 0.95 or 0.99, the code selects a threshold
+  # so that about target_pseudo_anomaly_fraction of training sequences become pseudo-anomalies.
+  auto_pseudo_threshold: true
+  target_pseudo_anomaly_fraction: 0.15
 
-  # Higher value creates fewer pseudo-anomaly samples.
-  # Use 0.99 to reduce false alerts.
-  normal_score_quantile: 0.99
+  # Pseudo labels are uncertain, so keep their reward weak.
+  pseudo_reward_weight: 0.15
+
+  # Used only if auto_pseudo_threshold: false.
+  normal_score_quantile: 0.95
 
   transition_smoothing: 1.0
 
 env:
-  # Tuned for better early detection while keeping false positives controlled.
-  continue_penalty: -0.03
+  # General balanced reward, not dataset-specific.
+  continue_penalty: -0.02
   correct_alert_reward: 12.0
-  false_alert_penalty: -25.0
-  missed_anomaly_penalty: -45.0
-  correct_normal_reward: 7.0
-  early_detection_bonus: 3.0
+  false_alert_penalty: -20.0
+  missed_anomaly_penalty: -50.0
+  correct_normal_reward: 6.0
+  early_detection_bonus: 2.0
 
 training_sampling:
   enabled: true
 
-  # This is pseudo-anomaly sampling, not true anomaly sampling.
-  # It uses reward_label from normal-deviation scoring.
-  anomaly_fraction: 0.20
+  # Automatic pseudo-anomaly sampling.
+  # This uses pseudo labels, NOT true anomaly labels.
+  auto_anomaly_fraction: true
+
+  # Limits for automatic sampling.
+  min_anomaly_fraction: 0.20
+  max_anomaly_fraction: 0.40
+
+  # Used only if auto_anomaly_fraction: false.
+  anomaly_fraction: 0.30
 
   keep_original_size: true
 
@@ -153,6 +165,7 @@ evaluation:
   false_negative_cost: 20.0
   delay_cost: 5.0
 
+  # Threshold tuning does not retrain the model.
   tune_threshold_on_validation: true
 
   # Options:
@@ -164,10 +177,9 @@ evaluation:
   #   balanced_accuracy
   threshold_metric: f1
 
-  # Faster threshold tuning than 100/150 steps.
-  threshold_min: -5.0
-  threshold_max: 5.0
-  threshold_steps: 25
+  threshold_min: -8.0
+  threshold_max: 8.0
+  threshold_steps: 35
 
   decision_threshold: 0.0
   min_alert_step: 1

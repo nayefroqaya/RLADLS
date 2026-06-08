@@ -45,11 +45,6 @@ class NormalTransitionScorer:
 
             self.vocab.update(events)
 
-            if len(events) == 1:
-                self.transition_counts[0][events[0]] += 1
-                self.context_totals[0] += 1
-                continue
-
             previous = 0
 
             for current in events:
@@ -85,7 +80,7 @@ class NormalTransitionScorer:
 
         return total_nll / max(1, count)
 
-    def fit_threshold(self, normal_sequences, quantile: float):
+    def fit_threshold_from_normal(self, normal_sequences, quantile: float):
         scores = [
             self.score(seq)
             for seq in normal_sequences
@@ -99,6 +94,35 @@ class NormalTransitionScorer:
                     float(quantile)
                 ).item()
             )
+
+        return self.threshold
+
+    def fit_threshold_from_all(self, sequences, target_pseudo_anomaly_fraction: float):
+        """
+        Select threshold automatically so that approximately
+        target_pseudo_anomaly_fraction of training sequences become pseudo-anomaly.
+        """
+        scores = [
+            self.score(seq)
+            for seq in sequences
+        ]
+
+        if not scores:
+            self.threshold = 0.0
+            return self.threshold
+
+        target_pseudo_anomaly_fraction = min(
+            max(float(target_pseudo_anomaly_fraction), 0.01),
+            0.50
+        )
+
+        threshold_quantile = 1.0 - target_pseudo_anomaly_fraction
+
+        self.threshold = float(
+            torch.tensor(scores).quantile(
+                threshold_quantile
+            ).item()
+        )
 
         return self.threshold
 
@@ -201,11 +225,19 @@ def prepare_semisupervised_training_sequences(sequences, cfg):
     )
 
     pseudo_reward_weight = float(
-        ss_cfg.get("pseudo_reward_weight", 0.30)
+        ss_cfg.get("pseudo_reward_weight", 0.15)
     )
 
     normal_score_quantile = float(
         ss_cfg.get("normal_score_quantile", 0.95)
+    )
+
+    auto_pseudo_threshold = bool(
+        ss_cfg.get("auto_pseudo_threshold", True)
+    )
+
+    target_pseudo_anomaly_fraction = float(
+        ss_cfg.get("target_pseudo_anomaly_fraction", 0.15)
     )
 
     seed = int(
@@ -247,10 +279,16 @@ def prepare_semisupervised_training_sequences(sequences, cfg):
 
     scorer.fit(labeled_normal_sequences)
 
-    threshold = scorer.fit_threshold(
-        normal_sequences=labeled_normal_sequences,
-        quantile=normal_score_quantile
-    )
+    if auto_pseudo_threshold:
+        threshold = scorer.fit_threshold_from_all(
+            sequences=sequences,
+            target_pseudo_anomaly_fraction=target_pseudo_anomaly_fraction
+        )
+    else:
+        threshold = scorer.fit_threshold_from_normal(
+            normal_sequences=labeled_normal_sequences,
+            quantile=normal_score_quantile
+        )
 
     prepared = []
 
@@ -258,12 +296,15 @@ def prepare_semisupervised_training_sequences(sequences, cfg):
     pseudo_anomaly_count = 0
     labeled_normal_used = 0
 
+    pseudo_scores = []
+
     for seq in sequences:
         copied = copy.deepcopy(seq)
 
         pseudo_label, anomaly_score = scorer.pseudo_label(seq)
 
         copied.anomaly_score = anomaly_score
+        pseudo_scores.append(anomaly_score)
 
         if seq.sequence_id in labeled_normal_ids:
             copied.reward_label = 0
@@ -283,6 +324,9 @@ def prepare_semisupervised_training_sequences(sequences, cfg):
 
         prepared.append(copied)
 
+    total_unlabeled = pseudo_normal_count + pseudo_anomaly_count
+    pseudo_anomaly_ratio = pseudo_anomaly_count / max(1, total_unlabeled)
+
     print()
     print("=" * 70)
     print("SEMI-SUPERVISED NORMAL-GUIDED TRAINING")
@@ -290,17 +334,26 @@ def prepare_semisupervised_training_sequences(sequences, cfg):
     print("True anomaly labels are NOT used for training reward.")
     print("Only labeled normal sequences are used to learn normal behavior.")
     print()
-    print(f"Total training sequences          : {len(sequences)}")
-    print(f"Available labeled normal sequences: {len(normal_sequences)}")
-    print(f"Used labeled normal fraction      : {labeled_normal_fraction:.4f}")
-    print(f"Used labeled normal sequences     : {labeled_normal_used}")
+    print(f"Total training sequences             : {len(sequences)}")
+    print(f"Available labeled normal sequences   : {len(normal_sequences)}")
+    print(f"Used labeled normal fraction         : {labeled_normal_fraction:.4f}")
+    print(f"Used labeled normal sequences        : {labeled_normal_used}")
     print()
-    print(f"Normal-deviation threshold        : {threshold:.6f}")
-    print(f"Normal score quantile             : {normal_score_quantile:.4f}")
-    print(f"Pseudo reward weight              : {pseudo_reward_weight:.4f}")
+    print(f"Auto pseudo-threshold enabled        : {auto_pseudo_threshold}")
+    print(f"Target pseudo-anomaly fraction       : {target_pseudo_anomaly_fraction:.4f}")
+    print(f"Normal-deviation threshold           : {threshold:.6f}")
+    print(f"Normal score quantile fallback       : {normal_score_quantile:.4f}")
+    print(f"Pseudo reward weight                 : {pseudo_reward_weight:.4f}")
     print()
-    print(f"Pseudo-normal unlabeled sequences : {pseudo_normal_count}")
-    print(f"Pseudo-anomaly unlabeled sequences: {pseudo_anomaly_count}")
+    print(f"Pseudo-normal unlabeled sequences    : {pseudo_normal_count}")
+    print(f"Pseudo-anomaly unlabeled sequences   : {pseudo_anomaly_count}")
+    print(f"Pseudo-anomaly ratio among unlabeled : {pseudo_anomaly_ratio:.4f}")
+
+    if pseudo_scores:
+        print(f"Deviation score min                  : {min(pseudo_scores):.6f}")
+        print(f"Deviation score max                  : {max(pseudo_scores):.6f}")
+        print(f"Deviation score mean                 : {sum(pseudo_scores) / len(pseudo_scores):.6f}")
+
     print("=" * 70)
 
     return prepared
@@ -327,8 +380,20 @@ def balance_training_sequences(sequences, cfg):
         print("Pseudo-balanced episode sampling: disabled")
         return sequences
 
-    anomaly_fraction = float(
-        sampling_cfg.get("anomaly_fraction", 0.50)
+    auto_anomaly_fraction = bool(
+        sampling_cfg.get("auto_anomaly_fraction", True)
+    )
+
+    min_anomaly_fraction = float(
+        sampling_cfg.get("min_anomaly_fraction", 0.20)
+    )
+
+    max_anomaly_fraction = float(
+        sampling_cfg.get("max_anomaly_fraction", 0.40)
+    )
+
+    manual_anomaly_fraction = float(
+        sampling_cfg.get("anomaly_fraction", 0.30)
     )
 
     keep_original_size = bool(
@@ -361,6 +426,27 @@ def balance_training_sequences(sequences, cfg):
         print("Pseudo-balanced sampling skipped: no pseudo-anomaly sequences found.")
         return sequences
 
+    pseudo_anomaly_ratio = len(pseudo_anomaly_sequences) / max(
+        1,
+        len(sequences)
+    )
+
+    if auto_anomaly_fraction:
+        anomaly_fraction = min(
+            max_anomaly_fraction,
+            max(
+                min_anomaly_fraction,
+                pseudo_anomaly_ratio * 2.0
+            )
+        )
+    else:
+        anomaly_fraction = manual_anomaly_fraction
+
+    anomaly_fraction = min(
+        max(anomaly_fraction, 0.01),
+        0.80
+    )
+
     if keep_original_size:
         total_target = len(sequences)
     else:
@@ -388,11 +474,6 @@ def balance_training_sequences(sequences, cfg):
     balanced = sampled_normals + sampled_anomalies
     rng.shuffle(balanced)
 
-    original_pseudo_anomaly_ratio = len(pseudo_anomaly_sequences) / max(
-        1,
-        len(sequences)
-    )
-
     new_pseudo_anomaly_ratio = anomaly_target / max(
         1,
         len(balanced)
@@ -404,11 +485,13 @@ def balance_training_sequences(sequences, cfg):
     print("=" * 70)
     print("Sampling uses pseudo labels, NOT true anomaly labels.")
     print()
+    print(f"Auto anomaly fraction enabled : {auto_anomaly_fraction}")
     print(f"Original train episodes       : {len(sequences)}")
     print(f"Original pseudo-normal        : {len(pseudo_normal_sequences)}")
     print(f"Original pseudo-anomaly       : {len(pseudo_anomaly_sequences)}")
-    print(f"Original pseudo-anomaly ratio : {original_pseudo_anomaly_ratio:.4f}")
+    print(f"Original pseudo-anomaly ratio : {pseudo_anomaly_ratio:.4f}")
     print()
+    print(f"Selected anomaly fraction     : {anomaly_fraction:.4f}")
     print(f"Balanced train episodes       : {len(balanced)}")
     print(f"Balanced pseudo-normal        : {normal_target}")
     print(f"Balanced pseudo-anomaly       : {anomaly_target}")
@@ -856,7 +939,7 @@ def train_in_domain(config_path: str = "config.yaml"):
         slm_embedding_matrix=slm_embedding_matrix,
         cfg=cfg,
         extra={
-            "experiment_type": "semi_supervised_in_domain",
+            "experiment_type": "semi_supervised_in_domain_auto",
             "dataset_name": dataset_name,
             "decision_threshold": cfg.get("evaluation", {}).get(
                 "decision_threshold",
