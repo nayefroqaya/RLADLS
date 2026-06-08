@@ -2,10 +2,9 @@ run:
   # Options:
   #   train
   #   eval_checkpoint
-  mode: eval_checkpoint
+  mode: train
 
   # Used only when mode: eval_checkpoint.
-  # This can point to any checkpoint you already trained.
   checkpoint_path: "outputs/indomain_ftadls_dqn.pt"
 
 experiment:
@@ -35,8 +34,6 @@ data:
   anomaly_label: Anomaly
   random_seed: 42
 
-# Per-dataset column names.
-# The code can also auto-detect common names.
 dataset_columns:
   BGL:
     template_col: EventTemplate
@@ -68,8 +65,8 @@ dataset_columns:
     time_col: Timestamp
     group_col: Node_block_id
 
-# Since preprocessing already created Node_block_id windows,
-# the code groups by Node_block_id and does not create new sliding windows.
+# Preprocessing already created Node_block_id windows.
+# The code groups by Node_block_id and does not create new sliding windows.
 dataset_group_cols:
   BGL: Node_block_id
   HDFS: Node_block_id
@@ -90,14 +87,24 @@ slm:
   cache_dir: "outputs/slm_cache"
 
 env:
-  # Balanced default rewards for reducing false positives
-  # while keeping good recall.
-  continue_penalty: -0.01
-  correct_alert_reward: 10.0
-  false_alert_penalty: -20.0
-  missed_anomaly_penalty: -30.0
-  correct_normal_reward: 6.0
-  early_detection_bonus: 1.0
+  # More anomaly-sensitive rewards for imbalanced datasets.
+  # Helps prevent the agent from becoming too conservative.
+  continue_penalty: -0.05
+  correct_alert_reward: 20.0
+  false_alert_penalty: -8.0
+  missed_anomaly_penalty: -80.0
+  correct_normal_reward: 3.0
+  early_detection_bonus: 5.0
+
+training_sampling:
+  enabled: true
+
+  # 0.50 means balanced training:
+  # 50% anomaly episodes and 50% normal episodes.
+  anomaly_fraction: 0.50
+
+  # Keep sampled training size close to the original train size.
+  keep_original_size: true
 
 model:
   id_embedding_dim: 64
@@ -107,11 +114,14 @@ model:
   batch_size: 64
   replay_capacity: 50000
   target_update_steps: 500
-  train_steps: 20000
+
+  # Increase if HDFS still has low recall.
+  train_steps: 30000
+
   warmup_steps: 1000
   epsilon_start: 1.0
   epsilon_end: 0.05
-  epsilon_decay_steps: 12000
+  epsilon_decay_steps: 18000
 
 evaluation:
   show_progress: true
@@ -122,7 +132,9 @@ evaluation:
   false_negative_cost: 20.0
   delay_cost: 5.0
 
-  # This works without retraining.
+  # Set true during training if you want validation threshold tuning.
+  # For faster checkpoint evaluation, you can set this to false
+  # and manually set decision_threshold.
   tune_threshold_on_validation: true
 
   # Options:
@@ -136,7 +148,7 @@ evaluation:
 
   threshold_min: -20.0
   threshold_max: 5.0
-  threshold_steps: 150
+  threshold_steps: 100
 
   decision_threshold: 0.0
   min_alert_step: 1
