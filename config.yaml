@@ -89,11 +89,10 @@ slm:
 semi_supervised:
   enabled: true
 
-  # Important:
   # True anomaly labels are NOT used during training.
   use_anomaly_labels_for_training: false
 
-  # Use labeled normal sequences to learn normal behavior.
+  # Use labeled normal sequences only to learn normal behavior.
   labeled_normal_fraction: 1.0
 
   # Keep this 0.0 to avoid supervised anomaly training.
@@ -101,33 +100,31 @@ semi_supervised:
 
   # Unlabeled sequences receive pseudo-rewards from normal-behavior deviation.
   use_pseudo_rewards: true
-  pseudo_reward_weight: 0.30
 
-  # Higher value = fewer pseudo-anomalies.
-  # Try 0.90 if the model is too conservative.
-  # Try 0.97 if the model raises too many false alerts.
-  normal_score_quantile: 0.95
+  # Lower value reduces the influence of uncertain pseudo-labels.
+  pseudo_reward_weight: 0.10
+
+  # Higher value creates fewer pseudo-anomaly samples.
+  # Use 0.99 because previous setting created too many false alerts.
+  normal_score_quantile: 0.99
 
   transition_smoothing: 1.0
 
 env:
-  # Anomaly-sensitive rewards.
-  # These rewards act on reward_label:
-  # - true normal labels for labeled normal sequences
-  # - pseudo labels for unlabeled sequences
-  continue_penalty: -0.05
-  correct_alert_reward: 20.0
-  false_alert_penalty: -8.0
-  missed_anomaly_penalty: -80.0
-  correct_normal_reward: 3.0
-  early_detection_bonus: 5.0
+  # Safer rewards to reduce false positives.
+  continue_penalty: -0.01
+  correct_alert_reward: 10.0
+  false_alert_penalty: -30.0
+  missed_anomaly_penalty: -40.0
+  correct_normal_reward: 8.0
+  early_detection_bonus: 1.0
 
 training_sampling:
   enabled: true
 
   # This is pseudo-anomaly sampling, not true anomaly sampling.
-  # It uses reward_label from normal-deviation scoring.
-  anomaly_fraction: 0.50
+  # Reduced from 0.50 to 0.20 to avoid over-alerting.
+  anomaly_fraction: 0.20
 
   keep_original_size: true
 
@@ -140,7 +137,6 @@ model:
   replay_capacity: 50000
   target_update_steps: 500
 
-  # Increase if recall is still low.
   train_steps: 30000
 
   warmup_steps: 1000
@@ -157,20 +153,15 @@ evaluation:
   false_negative_cost: 20.0
   delay_cost: 5.0
 
-  # Threshold tuning does not retrain the model.
   tune_threshold_on_validation: true
 
-  # Options:
-  #   f1
-  #   f2
-  #   cost
-  #   precision
-  #   recall
-  #   balanced_accuracy
-  threshold_metric: f2
+  # f1 balances precision and recall.
+  # Use f2 if you want more recall.
+  # Use precision if false positives are still too high.
+  threshold_metric: f1
 
-  threshold_min: -20.0
-  threshold_max: 5.0
+  threshold_min: -10.0
+  threshold_max: 10.0
   threshold_steps: 100
 
   decision_threshold: 0.0
