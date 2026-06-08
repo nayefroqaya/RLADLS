@@ -86,9 +86,35 @@ slm:
   batch_size: 64
   cache_dir: "outputs/slm_cache"
 
+semi_supervised:
+  enabled: true
+
+  # Important:
+  # True anomaly labels are NOT used during training.
+  use_anomaly_labels_for_training: false
+
+  # Use labeled normal sequences to learn normal behavior.
+  labeled_normal_fraction: 1.0
+
+  # Keep this 0.0 to avoid supervised anomaly training.
+  labeled_anomaly_fraction: 0.0
+
+  # Unlabeled sequences receive pseudo-rewards from normal-behavior deviation.
+  use_pseudo_rewards: true
+  pseudo_reward_weight: 0.30
+
+  # Higher value = fewer pseudo-anomalies.
+  # Try 0.90 if the model is too conservative.
+  # Try 0.97 if the model raises too many false alerts.
+  normal_score_quantile: 0.95
+
+  transition_smoothing: 1.0
+
 env:
-  # More anomaly-sensitive rewards for imbalanced datasets.
-  # Helps prevent the agent from becoming too conservative.
+  # Anomaly-sensitive rewards.
+  # These rewards act on reward_label:
+  # - true normal labels for labeled normal sequences
+  # - pseudo labels for unlabeled sequences
   continue_penalty: -0.05
   correct_alert_reward: 20.0
   false_alert_penalty: -8.0
@@ -99,11 +125,10 @@ env:
 training_sampling:
   enabled: true
 
-  # 0.50 means balanced training:
-  # 50% anomaly episodes and 50% normal episodes.
+  # This is pseudo-anomaly sampling, not true anomaly sampling.
+  # It uses reward_label from normal-deviation scoring.
   anomaly_fraction: 0.50
 
-  # Keep sampled training size close to the original train size.
   keep_original_size: true
 
 model:
@@ -115,7 +140,7 @@ model:
   replay_capacity: 50000
   target_update_steps: 500
 
-  # Increase if HDFS still has low recall.
+  # Increase if recall is still low.
   train_steps: 30000
 
   warmup_steps: 1000
@@ -132,9 +157,7 @@ evaluation:
   false_negative_cost: 20.0
   delay_cost: 5.0
 
-  # Set true during training if you want validation threshold tuning.
-  # For faster checkpoint evaluation, you can set this to false
-  # and manually set decision_threshold.
+  # Threshold tuning does not retrain the model.
   tune_threshold_on_validation: true
 
   # Options:
