@@ -154,18 +154,15 @@ evaluation:
   delay_cost: 5.0
 
   tune_threshold_on_validation: true
-
-  # f1 balances precision and recall.
-  # Use f2 if you want more recall.
-  # Use precision if false positives are still too high.
   threshold_metric: f1
 
-  threshold_min: -10.0
-  threshold_max: 10.0
-  threshold_steps: 100
+  threshold_min: -5.0
+  threshold_max: 5.0
+  threshold_steps: 25
 
   decision_threshold: 0.0
   min_alert_step: 1
+
 
 output:
   output_dir: outputs
