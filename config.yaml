@@ -23,7 +23,7 @@ split_files:
 data:
   # Change this for each in-domain run:
   # BGL, HDFS, TH_1G, SP_150MB, SP_150MB_ratio
-  dataset_name: SP_150MB_ratio
+  dataset_name: BGL
 
   group_col: Node_block_id
   time_col: Timestamp
