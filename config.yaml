@@ -23,7 +23,7 @@ split_files:
 data:
   # Change this for each in-domain run:
   # BGL, HDFS, TH_1G, SP_150MB, SP_150MB_ratio
-  dataset_name: SP_150MB_ratio
+  dataset_name: BGL
 
   group_col: Node_block_id
   time_col: Timestamp
@@ -122,7 +122,7 @@ env:
   false_alert_penalty: -20.0
   missed_anomaly_penalty: -50.0
   correct_normal_reward: 6.0
-  early_detection_bonus: 2.0
+  early_detection_bonus: 0.0  #2.0  #
 
 training_sampling:
   enabled: true
