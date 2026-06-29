@@ -855,6 +855,7 @@ def train_in_domain(config_path: str = "config.yaml"):
     dataset_name = str(cfg["data"]["dataset_name"])
     print(f"In-domain dataset: {dataset_name}")
 
+    # log events loading  and sequence construction : ---------------------------------------------
     train_sequences, val_sequences, test_sequences, template_to_id = (
         load_split_sequences_from_config(cfg)
     )
