@@ -89,7 +89,8 @@ slm:
 semi_supervised:
   enabled: true
 
-  # True anomaly labels are NOT used during training.
+  #real anomaly labels are not used to train the DQN reward.
+  # real anomaly labels are NOT used during training.
   use_anomaly_labels_for_training: false
 
   # Use labeled normal sequences only to learn normal behavior.
@@ -122,7 +123,7 @@ env:
   false_alert_penalty: -20.0
   missed_anomaly_penalty: -50.0
   correct_normal_reward: 6.0
-  early_detection_bonus: 6.0  #2.0  #
+  early_detection_bonus: 2.0  #
 
 training_sampling:
   enabled: true
