@@ -152,7 +152,7 @@ def build_template_mapping_from_dataframes(
             desc="Collecting unique templates"
         )
     )
-
+    # get embedding the template ID :
     template_to_id = {
         template: index + 1
         for index, template in enumerate(

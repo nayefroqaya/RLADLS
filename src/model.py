@@ -33,10 +33,10 @@ class SLM_DQN(nn.Module):
 
         slm_embedding_dim = slm_embedding_matrix.shape[1]
         # for full sytsem
-        #combined_dim = id_embedding_dim + slm_embedding_dim
+        combined_dim = id_embedding_dim + slm_embedding_dim
 
         # for ablation :
-        combined_dim = id_embedding_dim
+        #combined_dim = id_embedding_dim
 
         self.gru = nn.GRU(
             input_size=combined_dim,
@@ -50,28 +50,25 @@ class SLM_DQN(nn.Module):
             nn.Linear(hidden_dim, num_actions)
         )
     # full system
-    #def forward(self, x):
-    #    id_emb = self.id_embedding(x)
-    #    slm_emb = self.slm_embedding(x)
+    def forward(self, x):
+        id_emb = self.id_embedding(x)
+        slm_emb = self.slm_embedding(x)
 
-    #    combined = torch.cat(
-    #        [id_emb, slm_emb],
-    #        dim=-1
-    #    )
+        combined = torch.cat(
+            [id_emb, slm_emb],
+            dim=-1
+        )
 
     #for ablation :
     # Template-ID only ablation
-    def forward(self, x):
-        id_emb = self.id_embedding(x)
+    #def forward(self, x):
+    #    id_emb = self.id_embedding(x)
 
-        _, hidden = self.gru(id_emb)
-        hidden = hidden[-1]
+        #     _, hidden = self.gru(id_emb)
+        #     hidden = hidden[-1]
 
-        return self.head(hidden)
+        #     return self.head(hidden)
 
+        #     _, hidden = self.gru(combined)  #     hidden = hidden[-1]
 
-
-        _, hidden = self.gru(combined)
-        hidden = hidden[-1]
-
-        return self.head(hidden)
+        #    return self.head(hidden)
