@@ -40,18 +40,10 @@ if __name__ == "__main__":
     # ---------------- Dataset Splitting ----------------
     print(f"{GRAY}Splitting dataset into training, validation, and test sets...{RESET}")
     train_df, validate_df, test_df, df_features = utilities_obj.dataset_splitting(ALL_DATASET_CSV_PATH, DATASET, Round,
-                                                                                  Mix_or_stable)
+                                                                               Mix_or_stable)
     exit()
 
-
-
-
-
-
-
-
-
-    # Part B :
+    # ---------------- Section B  : Full pipeline:----------------
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
