@@ -1,6 +1,6 @@
 # LogDRL : Submitted in :The International Conference on Cooperative Information Systems (CoopIS) -2026
 
-a cost-aware, semi-supervised, deep reinforcement learning (RL) framework for early anomaly detection in system logs.
+a cost-aware, semi-supervised, deep reinforcement learning (RL) framework for early anomaly detection in Information system infrastructures logs.
 
 ## Project Structure
 
