@@ -81,3 +81,10 @@ Example split files:
 ../datasets/BGL/1_BGL_Splitted_Datasets/test_df.pkl
 ```
 
+## 📬 Contact
+We are happy to answer your questions:   
+
+| Name               | Email Address                             |
+|--------------------|-------------------------------------------|
+| Nayef Roqaya       | roqaya@staff.uni-marburg.de               |
+| Thorsten Papenbrock| papenbrock@informatik.uni-marburg.de      |
