@@ -18,15 +18,7 @@ from src.utils import load_config, set_seed
 
 
 def run_cross_dataset_adaptation(config_path: str = "config.yaml"):
-    """
-    Cross-dataset experiment with target adaptation.
 
-    Workflow:
-      1. Train RL agent on source datasets.
-      2. Test directly on target test set: cross-dataset direct transfer.
-      3. Adapt/fine-tune on only 20% normal target training sequences.
-      4. Test adapted model on target test set.
-    """
     cfg = load_config(config_path)
     set_seed(cfg["data"]["random_seed"])
 

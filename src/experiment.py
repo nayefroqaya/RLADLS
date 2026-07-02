@@ -16,25 +16,7 @@ VALID_RUN_MODES = {
 
 
 def run_experiment_from_config(config_path: str = "config.yaml"):
-    """
-    YAML-controlled FTADLS runner.
 
-    This version supports only in-domain experiments.
-
-    Use config.yaml to choose whether to train or evaluate:
-
-    run:
-      mode: train
-
-    or:
-
-    run:
-      mode: eval_checkpoint
-      checkpoint_path: outputs/indomain_ftadls_dqn.pt
-
-    experiment:
-      case: in_domain
-    """
 
     cfg = load_config(config_path)
 
