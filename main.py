@@ -6,15 +6,12 @@ from load_datalog import LogdataRead
 from utility import Utilities
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":     # path to save files- Change the path based on your running machine
 
     # Part A :
-
     # ---------------- Section A  : run config for data spliting (60%-10%-30%):----------------
-
     warnings.filterwarnings('ignore')
     colorama.init()
-
     GREEN = colorama.Fore.GREEN
     GRAY = colorama.Fore.LIGHTBLACK_EX
     RESET = colorama.Fore.RESET
@@ -25,7 +22,7 @@ if __name__ == "__main__":
     Round = '1'  # 1 dataset for first run. 2 for second run. 3 for third run.
     Mix_or_stable = '0'  # 0 Full stable subset  / 1 mix subset
 
-    # path to save files
+    # path to save files- Change the path based on your running machine
     # ALL_DATASET_CSV_PATH = f'../../LWADLS/{DATASETS_FOLDER}/{DATASET}/{DATASET}.csv' # data second paper
     ALL_DATASET_CSV_PATH = f'../../LogSLM/{DATASETS_FOLDER}/{DATASET}/{DATASET}.csv'  # data second paper
 
