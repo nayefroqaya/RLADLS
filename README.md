@@ -67,8 +67,8 @@ Steps to run LogDRL:
 ## 🛠️ Preparation - Data Splitting  step:
 
 1. After the parsing, we run load_datalog.py
-2. In main : we uncomment part A : run config for data spliting (60%-10%-30%).
-3. In main : we comment part A and uncomment part B: run full pipeline.
+2. In main.py : we uncomment part A : run config for data splitting (60%-10%-30%).
+3. In main.py : we comment part A and uncomment part B: run full pipeline.
 
 ## Data Format
 The input data should be provided as preprocessed `.pkl` or `.csv` split files.
