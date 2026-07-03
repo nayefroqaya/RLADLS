@@ -9,7 +9,7 @@ from utility import Utilities
 if __name__ == "__main__":     # path to save files- Change the path based on your running machine
 
     # Part A :
-    # ---------------- Section A  : run config for data spliting (60%-10%-30%):----------------
+    # ---------------- Section A  : run config for data splitting (60%-10%-30%):----------------------------------------
     warnings.filterwarnings('ignore')
     colorama.init()
     GREEN = colorama.Fore.GREEN
@@ -33,22 +33,18 @@ if __name__ == "__main__":     # path to save files- Change the path based on yo
     # ---------------- Data as CSV ----------------
     logdata_read_obj.read_original_data_log_from_log_to_csv(DATASET, ALL_DATASET_CSV_PATH)
     print(f"{GREEN}Reading the file was done successfully{RESET}")
-
     # ---------------- Dataset Splitting ----------------
     print(f"{GRAY}Splitting dataset into training, validation, and test sets...{RESET}")
     train_df, validate_df, test_df, df_features = utilities_obj.dataset_splitting(ALL_DATASET_CSV_PATH, DATASET, Round,
                                                                                Mix_or_stable)
     #exit()
 
-    # ---------------- Section B  : Full pipeline:----------------
+    # ---------------- Section B  : Full pipeline:---------------------------------------------------------------------
     parser = argparse.ArgumentParser()
-
     parser.add_argument(
         "--config",
         default="config.yaml",
         help="Path to config YAML file."
     )
-
     args = parser.parse_args()
-
     run_experiment_from_config(args.config)
